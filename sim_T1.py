@@ -48,6 +48,8 @@ class Fila:
         self.tempo_fila = {i: 0 for i in range(capacidade + 1)}
         self.ultimo_tempo = 0
         self.clientes_perdidos = 0
+        self.total_chegadas = 0  
+        self.total_atendidos = 0  
 
 # ===== Carrega Modelo =====
 
@@ -94,8 +96,10 @@ while eventos and indice_aleatorio < total_aleatorios:
 
     if evento.tipo == "CHEGADA":
         fila = evento.fila_destino
+        fila.total_chegadas += 1  
         if fila.fila < fila.capacidade:
             fila.fila += 1
+            fila.total_atendidos += 1
             if fila.servidores_ocupados < fila.servidores:
                 fila.servidores_ocupados += 1
                 fila.fila -= 1
@@ -135,10 +139,12 @@ while eventos and indice_aleatorio < total_aleatorios:
 
     elif evento.tipo == "PASSAGEM":
         fila = evento.fila_destino
+        fila.total_chegadas += 1
         if fila.fila < fila.capacidade:
             fila.fila += 1
             if fila.servidores_ocupados < fila.servidores:
                 fila.servidores_ocupados += 1
+                fila.total_atendidos += 1
                 fila.fila -= 1
                 if indice_aleatorio < total_aleatorios:
                     sorteio = numeros_aleatorios[indice_aleatorio]
@@ -159,12 +165,20 @@ for fila in filas.values():
 def relatorio(fila):
     tempo_total = sum(fila.tempo_fila.values())
     populacao_media = sum(tempo * n for n, tempo in fila.tempo_fila.items()) / tempo_total
+    taxa_atendimento = (fila.total_atendidos / fila.total_chegadas) * 100 if fila.total_chegadas > 0 else 0
+    taxa_rejeicao = (fila.clientes_perdidos / fila.total_chegadas) * 100 if fila.total_chegadas > 0 else 0
+
     print(f"\n--- Fila {fila.id} ---")
     print(f"Clientes perdidos: {fila.clientes_perdidos}")
+    print(f"Total de chegadas: {fila.total_chegadas}")
+    print(f"Total de atendidos: {fila.total_atendidos}")
+    print(f"Taxa de atendimento: {taxa_atendimento:.2f}%")
+    print(f"Taxa de rejeição: {taxa_rejeicao:.2f}%")
     print(f"População média: {populacao_media:.2f}")
     print("Tempo total em cada estado da fila:")
     for i in range(fila.capacidade + 1):
         print(f"  Fila {i}: {fila.tempo_fila[i]:.2f} minutos")
+
 
 print(f"\nSimulação encerrada após {tempo_final:.2f} minutos.")
 for fila in filas.values():
