@@ -1,4 +1,8 @@
 import heapq
+import yaml
+import random
+
+# ===== Funções de apoio =====
 
 def uniforme(a, b, x):
     return a + (b - a) * x
@@ -11,9 +15,19 @@ def gerador_mcl(X0, a, c, M, n):
         numeros.append(Xn / M)
     return numeros
 
+def escolhe_destino(roteamento, sorteio):
+    acumulado = 0
+    for destino, probabilidade in roteamento.items():
+        acumulado += probabilidade
+        if sorteio <= acumulado:
+            return destino
+    return "saida"  # fallback
+
+# ===== Classes =====
+
 class Evento:
     def __init__(self, tipo, tempo, fila_origem=None, fila_destino=None):
-        self.tipo = tipo  # "CHEGADA", "SAIDA", "PASSAGEM"
+        self.tipo = tipo
         self.tempo = tempo
         self.fila_origem = fila_origem
         self.fila_destino = fila_destino
@@ -22,46 +36,59 @@ class Evento:
         return self.tempo < outro.tempo
 
 class Fila:
-    def __init__(self, id, servidores, capacidade, atendimento_min, atendimento_max):
+    def __init__(self, id, servidores, capacidade, atendimento_min, atendimento_max, roteamento):
         self.id = id
         self.servidores = servidores
         self.capacidade = capacidade
         self.atendimento_min = atendimento_min
         self.atendimento_max = atendimento_max
+        self.roteamento = roteamento
         self.fila = 0
         self.servidores_ocupados = 0
         self.tempo_fila = {i: 0 for i in range(capacidade + 1)}
         self.ultimo_tempo = 0
         self.clientes_perdidos = 0
 
-# Parâmetros
+# ===== Carrega Modelo =====
+
+with open("modelo.yml", "r") as f:
+    modelo = yaml.safe_load(f)
+
+filas = {}
+for id_fila, dados in modelo["filas"].items():
+    filas[int(id_fila)] = Fila(
+        id=int(id_fila),
+        servidores=dados["servidores"],
+        capacidade=dados["capacidade"],
+        atendimento_min=dados["atendimento_min"],
+        atendimento_max=dados["atendimento_max"],
+        roteamento=dados.get("roteamento", {})
+    )
+
+# ===== Parâmetros =====
+
+chegada_info = modelo["chegada"]
+fila_chegada = filas[chegada_info["fila"]]
+chegada_min = chegada_info["intervalo_min"]
+chegada_max = chegada_info["intervalo_max"]
+tempo_primeira_chegada = chegada_info["tempo_primeira"]
+
 total_aleatorios = 100000
-X0 = 55
-a = 423232
-c = 8743123
-M = 3232312318
-numeros_aleatorios = gerador_mcl(X0, a, c, M, total_aleatorios)
+numeros_aleatorios = gerador_mcl(X0=55, a=423232, c=8743123, M=3232312318, n=total_aleatorios)
 indice_aleatorio = 0
 
-# Fila 1: G/G/2/3, chegada entre [1..4], serviço entre [3..4]
-# Fila 2: G/G/1/5, serviço entre [2..3]
-fila1 = Fila(1, servidores=2, capacidade=3, atendimento_min=3.0, atendimento_max=4.0)
-fila2 = Fila(2, servidores=1, capacidade=5, atendimento_min=2.0, atendimento_max=3.0)
-
-chegada_min, chegada_max = 1.0, 4.0
-tempo_primeira_chegada = 1.5
-
 eventos = []
-heapq.heappush(eventos, Evento("CHEGADA", tempo_primeira_chegada, fila_destino=fila1))
+heapq.heappush(eventos, Evento("CHEGADA", tempo_primeira_chegada, fila_destino=fila_chegada))
 
 tempo_final = 0
+
+# ===== Loop Principal =====
 
 while eventos and indice_aleatorio < total_aleatorios:
     evento = heapq.heappop(eventos)
     tempo_atual = evento.tempo
 
-    # Atualiza tempos de estado
-    for fila in [fila1, fila2]:
+    for fila in filas.values():
         fila.tempo_fila[fila.fila] += tempo_atual - fila.ultimo_tempo
         fila.ultimo_tempo = tempo_atual
 
@@ -80,22 +107,24 @@ while eventos and indice_aleatorio < total_aleatorios:
         else:
             fila.clientes_perdidos += 1
 
-        # Próxima chegada externa só vai para a Fila 1
-        if fila == fila1 and indice_aleatorio < total_aleatorios:
+        if fila == fila_chegada and indice_aleatorio < total_aleatorios:
             sorteio = numeros_aleatorios[indice_aleatorio]
             indice_aleatorio += 1
             tempo_chegada = uniforme(chegada_min, chegada_max, sorteio)
-            heapq.heappush(eventos, Evento("CHEGADA", tempo_atual + tempo_chegada, fila_destino=fila1))
+            heapq.heappush(eventos, Evento("CHEGADA", tempo_atual + tempo_chegada, fila_destino=fila_chegada))
 
     elif evento.tipo == "SAIDA":
         fila = evento.fila_origem
         fila.servidores_ocupados -= 1
 
-        # Se for a Fila 1, agenda passagem para a Fila 2
-        if fila == fila1:
-            heapq.heappush(eventos, Evento("PASSAGEM", tempo_atual, fila_origem=fila1, fila_destino=fila2))
+        if fila.roteamento and indice_aleatorio < total_aleatorios:
+            sorteio = numeros_aleatorios[indice_aleatorio]
+            indice_aleatorio += 1
+            destino = escolhe_destino(fila.roteamento, sorteio)
+            if destino != "saida":
+                destino_fila = filas[int(destino)]
+                heapq.heappush(eventos, Evento("PASSAGEM", tempo_atual, fila_origem=fila, fila_destino=destino_fila))
 
-        # Verifica se há clientes esperando na fila
         if fila.fila > 0 and fila.servidores_ocupados < fila.servidores and indice_aleatorio < total_aleatorios:
             fila.fila -= 1
             fila.servidores_ocupados += 1
@@ -122,10 +151,11 @@ while eventos and indice_aleatorio < total_aleatorios:
     tempo_final = tempo_atual
 
 # Atualiza tempos finais
-for fila in [fila1, fila2]:
+for fila in filas.values():
     fila.tempo_fila[fila.fila] += tempo_final - fila.ultimo_tempo
 
-# Relatórios
+# ===== Relatórios =====
+
 def relatorio(fila):
     tempo_total = sum(fila.tempo_fila.values())
     populacao_media = sum(tempo * n for n, tempo in fila.tempo_fila.items()) / tempo_total
@@ -137,5 +167,5 @@ def relatorio(fila):
         print(f"  Fila {i}: {fila.tempo_fila[i]:.2f} minutos")
 
 print(f"\nSimulação encerrada após {tempo_final:.2f} minutos.")
-relatorio(fila1)
-relatorio(fila2)
+for fila in filas.values():
+    relatorio(fila)

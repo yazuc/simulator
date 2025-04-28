@@ -1,0 +1,31 @@
+filas:
+  1:
+    servidores: 1
+    capacidade: 1
+    atendimento_min: 1
+    atendimento_max: 2
+    roteamento:
+      2: 0.8
+      3: 0.2
+  2:
+    servidores: 2
+    capacidade: 5
+    atendimento_min: 4
+    atendimento_max: 8
+    roteamento:
+      2: 0.5
+      3: 0.3
+      saida: 0.2
+  3:
+    servidores: 2
+    capacidade: 10
+    atendimento_min: 5
+    atendimento_max: 15
+    roteamento:
+      3: 0.7
+      saida: 0.3
+chegada:
+  fila: 1
+  intervalo_min: 2
+  intervalo_max: 4
+  tempo_primeira: 2.0
